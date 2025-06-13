@@ -1,0 +1,36 @@
+export const orderData = [
+  {
+    name: '구매자', // testUser 중 buyer 이름
+    phoneNumber: '010-1234-5678',
+    address: '서울특별시 강남구 역삼동',
+    subtotal: 85000,
+    totalQuantity: 3,
+    usePoint: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    id: 'order2',
+    userId: 'buyer',
+    name: '구매자',
+    phoneNumber: '010-1234-5678',
+    address: '서울특별시 강남구 역삼동',
+    totalQuantity: 2,
+    subtotal: 53000,
+    usePoint: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    id: 'order3',
+    userId: 'buyer',
+    name: '구매자',
+    phoneNumber: '010-1234-5678',
+    address: '서울특별시 강남구 역삼동',
+    totalQuantity: 1,
+    subtotal: 22000,
+    usePoint: 2000,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+];

@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  password       String
+  refreshToken   String?
+  image          String?         @default("https://sprint-be-project.s3.ap-northeast-2.amazonaws.com/codiit/1749477485230-user_default.png")
+  type           UserType        @default(BUYER)
+  points         Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  gradeId        String          @default("grade_green")
+  alarms         Alarm[]
+  cart           Cart?
+  favoriteStores FavoriteStore[]
+  inquiries      Inquiry[]
+  orders         Order[]
+  reply          Reply[]
+  reviews        Review[]
+  SalesLog       SalesLog[]
+  stores         Store?
+  grade          Grade           @relation(fields: [gradeId], references: [id])
+}
+
+model Grade {
+  id        String @id @default(cuid())
+  name      String
+  rate      Int
+  minAmount Int
+  users     User[]
+}
+
+model Store {
+  id                String              @id @default(cuid())
+  userId            String              @unique
+  name              String
+  address           String
+  phoneNumber       String
+  content           String
+  image             String              @default("")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  DailyStoreSales   DailyStoreSales[]
+  favoriteBy        FavoriteStore[]
+  MonthlyStoreSales MonthlyStoreSales[]
+  products          Product[]
+  SalesLog          SalesLog[]
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  WeeklyStoreSales  WeeklyStoreSales[]
+  yearlyStoreSales  yearlyStoreSales[]
+}
+
+model FavoriteStore {
+  storeId String
+  userId  String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, userId])
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  storeId           String
+  name              String
+  price             Int         @default(0)
+  image             String      @default("")
+  discountRate      Int         @default(0)
+  discountStartTime DateTime?
+  discountEndTime   DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  reviewsRating     Int         @default(0)
+  cartItems         CartItem[]
+  inquiries         Inquiry[]
+  orderItems        OrderItem[]
+  store             Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reviews           Review[]
+  SalesLog          SalesLog[]
+  stocks            Stock[]
+  category          Category    @relation("ProductCategory", fields: [categoryId], references: [id])
+  categoryId        String
+}
+
+model Category {
+  id      String    @id @default(cuid())
+  name    String
+  Product Product[] @relation("ProductCategory")
+}
+
+model Stock {
+  id        String  @id @default(cuid())
+  productId String
+  sizeId    Int
+  quantity  Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size      Size    @relation(fields: [sizeId], references: [id])
+}
+
+model Size {
+  id        Int         @id @default(autoincrement())
+  name      String      @unique
+  size      Json
+  CartItem  CartItem[]
+  OrderItem OrderItem[]
+  Stock     Stock[]
+}
+
+model Inquiry {
+  id        String       @id @default(cuid())
+  userId    String
+  productId String
+  title     String
+  content   String
+  status    AnswerStatus @default(WaitingAnswer)
+  isSecret  Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reply     Reply?
+}
+
+model Reply {
+  id        String   @id @default(cuid())
+  inquiryId String   @unique
+  userId    String?
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  userId      String
+  productId   String
+  content     String
+  rating      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orderItemId String   @unique
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  buyerId   String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+
+  @@unique([id, buyerId])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  productId String
+  sizeId    Int
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size      Size     @relation(fields: [sizeId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  userId        String
+  name          String
+  phoneNumber   String
+  address       String
+  subtotal      Int
+  totalQuantity Int         @default(1)
+  usePoint      Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+  payments      Payment?
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String
+  productId  String
+  sizeId     Int
+  price      Int
+  quantity   Int     @default(1)
+  isReviewed Boolean @default(false)
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id])
+  size       Size    @relation(fields: [sizeId], references: [id])
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  orderId   String        @unique
+  price     Int
+  status    PaymentStatus @default(WaitingPayment)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Alarm {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  isChecked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SalesLog {
+  id        String   @id @default(cuid())
+  productId String?
+  userId    String?
+  storeId   String?
+  price     Int
+  quantity  Int      @default(1)
+  soldAt    DateTime @default(now())
+  product   Product? @relation(fields: [productId], references: [id])
+  store     Store?   @relation(fields: [storeId], references: [id])
+  buyer     User?    @relation(fields: [userId], references: [id])
+}
+
+model DailyStoreSales {
+  id          String   @id @default(cuid())
+  storeId     String
+  date        DateTime
+  totalSales  Int
+  totalOrders Int
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date])
+}
+
+model WeeklyStoreSales {
+  id          String   @id @default(cuid())
+  storeId     String
+  week        Int
+  year        Int
+  totalSales  Int
+  totalOrders Int
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, year, week])
+}
+
+model MonthlyStoreSales {
+  id          String   @id @default(cuid())
+  storeId     String
+  month       Int
+  year        Int
+  totalSales  Int
+  totalOrders Int
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, year, month])
+}
+
+model yearlyStoreSales {
+  id          String   @id @default(cuid())
+  storeId     String
+  year        Int
+  totalSales  Int
+  totalOrders Int
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, year])
+}
+
+enum UserType {
+  BUYER
+  SELLER
+}
+
+enum AnswerStatus {
+  WaitingAnswer
+  CompletedAnswer
+}
+
+enum PaymentStatus {
+  WaitingPayment
+  CompletedPayment
+  CancelledPayment
+}
