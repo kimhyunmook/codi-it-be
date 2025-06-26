@@ -1,4 +1,4 @@
-import { Controller, Post, BadGatewayException } from '@nestjs/common';
+import { Controller, Post, BadGatewayException, Get } from '@nestjs/common';
 import { S3Service, S3UploadResult } from './s3.service';
 import { S3File, S3Upload } from 'src/common/decorators/s3.decorator';
 import {
@@ -9,7 +9,9 @@ import {
   ApiTags,
   ApiBearerAuth,
   ApiConsumes,
+  ApiExcludeEndpoint,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 
 class ImageDto {
   @ApiProperty({ example: 'imaeg file path', description: '이미지 파일 주소' })
@@ -32,10 +34,6 @@ export class S3Controller {
     return { message: '업로드 성공', url: s3File.url, key: s3File.key };
   }
 
-  // /**
-  //  * 업로드된 파일을 다운로드하는 예시
-  //  * key 파라미터로 S3 객체의 Key(예: "codiit/1685991234567-hello.jpg") 전달
-  //  */
   // @Get('download/:key')
   // async getFile(@Param('key') key: string, @Res() res: Response): Promise<void> {
   //   const stream = await this.s3Service.getFileStream(key);
@@ -47,9 +45,12 @@ export class S3Controller {
   //   stream.pipe(res);
   // }
 
-  // /**
-  //  * 업로드된 파일을 삭제하는 예시
-  //  */
+  @ApiExcludeEndpoint()
+  @Get('all')
+  async getAllFile() {
+    return await this.s3Service.getAllImageKeys();
+  }
+
   // @Delete('delete/:key')
   // async deleteFile(@Param('key') key: string): Promise<{ message: string }> {
   //   await this.s3Service.deleteFile(key);

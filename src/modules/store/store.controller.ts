@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiQuery,
+  OmitType,
 } from '@nestjs/swagger';
 import { StoreService } from './store.service';
 import { CreateStoreDto } from './dto/create-store.dto';
@@ -50,19 +51,18 @@ export class StoreController {
     description: '등록된 스토어 정보를 반환합니다.',
     type: StoreResponse,
   })
-  private async register(
+  private async create(
     @Body() dto: CreateStoreDto,
     @CurrentUser('sub') userId: string,
     @S3File() s3File: S3UploadResult,
   ): Promise<StoreResponse> {
-    console.log(s3File);
-
     return this.storeService.create({ ...dto, userId, image: s3File ? s3File.url : '' });
   }
 
   @Patch(':storeId')
   @ApiBearerAuth()
   @S3Upload('image')
+  @ApiConsumes('multipart/form-data')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '스토어 수정', description: '내 스토어 정보 수정입니다.' })
   @ApiParam({ name: 'storeId', description: '수정할 스토어 ID', required: true })
@@ -73,14 +73,14 @@ export class StoreController {
   private async update(
     @Body() dto: UpdateStoreDto,
     @Param('storeId') storeId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') userId: UserId['userId'],
     @S3File() s3File: S3UploadResult,
   ): Promise<StoreResponse> {
     return this.storeService.update({
       ...dto,
       id: storeId,
       userId,
-      image: s3File ? s3File.url : '',
+      image: s3File ? s3File.url : undefined,
     });
   }
 
@@ -91,9 +91,11 @@ export class StoreController {
   @ApiParam({ name: 'storeId', description: '조회할 스토어 ID', required: true })
   @ApiCreatedResponse({
     description: '스토어 정보를 반환합니다.',
-    type: StoreResponse,
+    type: OmitType(MyStoreResponse, ['productCount', 'monthFavoriteCount', 'totalSoldCount']),
   })
-  private async findStore(@Param('storeId') storeId: string): Promise<StoreResponse> {
+  private async findStore(
+    @Param('storeId') storeId: string,
+  ): Promise<Omit<MyStoreResponse, 'productCount' | 'monthFavoriteCount' | 'totalSoldCount'>> {
     return this.storeService.findStore({ id: storeId });
   }
 

@@ -1,5 +1,6 @@
 // order-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
+import { Payment, PaymentStatus } from '@prisma/client';
 
 export class ReviewDto {
   @ApiProperty()
@@ -46,6 +47,9 @@ export class OrderItemDto {
   @ApiProperty()
   quantity: number;
 
+  @ApiProperty()
+  prductId: string;
+
   @ApiProperty({ type: ProductDto })
   product: ProductDto;
 
@@ -53,18 +57,43 @@ export class OrderItemDto {
   size: SizeDto;
 }
 
-export class PaymentDto {
-  @ApiProperty()
+enum PaymentStatusEnum {
+  CompletedPayment = 'CompletedPayment',
+  CancelledPayment = 'CancelledPayment',
+  WaitingPayment = 'WaitingPayment',
+}
+
+export class PaymentDto implements Payment {
+  @ApiProperty({ example: 'CUID', description: 'payment ID' })
   id: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 30000, description: '최종 결제 가격' })
   price: number;
 
-  @ApiProperty()
-  status: string;
+  @ApiProperty({
+    example: PaymentStatus.CompletedPayment,
+    description: '결제 상태',
+    enum: PaymentStatusEnum,
+  })
+  status: PaymentStatus;
 
-  @ApiProperty()
+  @ApiProperty({
+    example: new Date(),
+    description: '생산 날짜',
+  })
   createdAt: Date;
+
+  @ApiProperty({
+    example: new Date(),
+    description: '업데이트 날짜 (결제 완료, 결제 취소)',
+  })
+  updatedAt: Date;
+
+  @ApiProperty({
+    example: 'CUID',
+    description: '주문 ID',
+  })
+  orderId: string;
 }
 
 export class OrderResponseDto {

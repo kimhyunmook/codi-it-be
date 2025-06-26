@@ -13,6 +13,7 @@ export class CreateReviewDto {
   @Length(10)
   content: string;
 
+  @ApiProperty({ example: 'orderItemId123', description: '주문 아이템 ID' })
   @IsString()
   @IsNotEmpty()
   orderItemId: string; // ✅ 추가

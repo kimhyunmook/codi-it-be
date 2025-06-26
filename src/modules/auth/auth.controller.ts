@@ -1,16 +1,17 @@
 import { Controller, Post, Body, Res, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ApiOperation, ApiBody, ApiBearerAuth, ApiTags, ApiResponse, ApiHeader } from '@nestjs/swagger';
+import { ApiOperation, ApiBody, ApiBearerAuth, ApiTags, ApiResponse } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { UseGuards } from '@nestjs/common';
 import { Req } from '@nestjs/common';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { SwaggerErrorExamples } from 'src/common/utils/swagger-error-response.util';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/common/prisma/prisma.service';
+import { GradeResponse } from '../metadata/dto/response';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -21,8 +22,13 @@ export class AuthController {
     private readonly prisma: PrismaService,
   ) {}
 
+  @Public()
   @Post('login')
-  @ApiOperation({ summary: '로그인 및 Access/Refresh 토큰 발급' })
+  @ApiOperation({
+    summary: '로그인 및 Access/Refresh 토큰 발급',
+    description:
+      '사용자의 이메일과 비밀번호로 로그인하고, Access Token과 Refresh Token을 발급합니다.',
+  })
   @ApiResponse({
     status: 201,
     description: '로그인 성공했습니다.',
@@ -34,6 +40,8 @@ export class AuthController {
           name: 'TestUser',
           type: 'Buyer',
           points: '1000',
+          image: 'string',
+          grade: GradeResponse,
         },
         accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
@@ -67,7 +75,10 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
-  @ApiOperation({ summary: 'Refresh Token으로 Access Token 재발급' })
+  @ApiOperation({
+    summary: 'Refresh Token으로 Access Token 재발급',
+    description: '유효한 Refresh Token을 사용하여 새로운 Access Token을 발급합니다.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Access Token 재발급 성공',
@@ -91,7 +102,7 @@ export class AuthController {
     description: '잘못된 요청입니다',
     schema: { example: SwaggerErrorExamples.BadRequest },
   })
-  async refresh(@Req() req): Promise<{ accessToken: string }> {
+  async refresh(@Req() req: Request): Promise<{ accessToken: string }> {
     const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
@@ -114,13 +125,12 @@ export class AuthController {
       { sub: user.id, email: user.email, type: user.type },
       {
         secret: process.env.ACCESS_TOKEN_SECRET,
-        expiresIn: '15m',
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRESIN || '15m',
       },
     );
 
     return { accessToken: newAccessToken };
   }
-
 
   @Post('logout')
   @UseGuards(AuthGuard)

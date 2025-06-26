@@ -10,7 +10,7 @@ import tseslint from 'typescript-eslint';
  */
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs', 'scripts/*', 'doc/*', 'ecosystem.config.js'],
+    ignores: ['eslint.config.mjs', 'scripts/*', 'doc/*', 'ecosystem.config.js', 'perf/**'],
   },
 
   // 기본 ESLint 권장 설정 및 타입 체킹 활성화

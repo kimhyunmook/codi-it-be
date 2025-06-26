@@ -9,22 +9,33 @@ import { InquiriesErrorMsg } from './constants/message';
 import { StoreErrorMsg } from '../store/constants/message';
 import { InquiryResponse } from './dto/response';
 import { UserErrorMsg } from '../user/constants/mesasge';
+import { AlarmService } from '../alarm/alarm.service';
 
 @Injectable()
 export class InquiryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alarmService: AlarmService,
+  ) {}
 
   async create(dto: CreateInquiryServiceDto & UserId): Promise<InquiryResponse> {
     const { userId, productId, title, content, isSecret } = dto;
     return await this.prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({
         where: { id: productId },
+        include: { store: true },
       });
       if (!product) throw new NotFoundException(ProductErrorMsg.NotFound);
 
       const result = await tx.inquiry.create({
         data: { userId, productId, title, content, isSecret },
       });
+
+      if (product.store.userId !== userId) {
+        const alarmContent = `${product.name}에 새로운 문의가 등록되었습니다.`;
+        await this.alarmService.createAlarm(product.store.userId, alarmContent);
+      }
+
       return result;
     });
   }
@@ -61,10 +72,18 @@ export class InquiryService {
       const inquiries = await tx.inquiry.findMany({
         where: { productId: targetId },
         include: {
-          reply: true,
+          user: { select: { name: true } },
+          reply: {
+            include: {
+              user: {
+                select: { name: true },
+              },
+            },
+          },
         },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        orderBy: { createdAt: 'desc' },
       });
 
       const totalCount = await tx.inquiry.count({ where: { productId: targetId } });
@@ -90,6 +109,9 @@ export class InquiryService {
           title: true,
           isSecret: true,
           status: true,
+          user: { select: { id: true, name: true } },
+          createdAt: true,
+          content: true,
           product: {
             select: {
               id: true,
@@ -117,6 +139,9 @@ export class InquiryService {
             title: true,
             isSecret: true,
             status: true,
+            user: { select: { id: true, name: true } },
+            createdAt: true,
+            content: true,
             product: {
               select: {
                 id: true,
@@ -126,6 +151,9 @@ export class InquiryService {
               },
             },
           },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: { createdAt: 'desc' },
         });
       }
       const totalCount = await tx.inquiry.count({
@@ -167,12 +195,27 @@ export class InquiryService {
     return await this.prisma.$transaction(async (tx) => {
       const inquiry = await tx.inquiry.findUnique({
         where: { id: inquiryId },
+        select: {
+          id: true,
+          product: true,
+          user: true,
+        },
       });
       if (!inquiry) throw new NotFoundException(InquiriesErrorMsg.NotFound);
 
-      return await tx.reply.create({
+      await tx.inquiry.update({
+        where: { id: inquiry.id },
+        data: { status: 'CompletedAnswer' },
+      });
+
+      const reqply = tx.reply.create({
         data: { userId, inquiryId: inquiry.id, content },
       });
+
+      const alarmContent = `${inquiry.product.name}에 대한 문의에 답변이 달렸습니다.`;
+      await this.alarmService.createAlarm(inquiry.user.id, alarmContent);
+
+      return reqply;
     });
   }
 

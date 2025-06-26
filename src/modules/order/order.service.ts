@@ -10,12 +10,18 @@ import { Prisma } from '@prisma/client';
 import { addDays } from 'date-fns';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { calculateShippingFee } from 'src/common/utils/shipping.util';
+import { AlarmService } from 'src/modules/alarm/alarm.service';
+// import { UserId } from 'src/types/common';
+// import { PaymentDto } from './dto/order-response.dto';
 
 @Injectable()
 export class OrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alarmService: AlarmService,
+  ) {}
 
-  async getOrdersWithDetails(userId: string, page = 1, limit = 10, status?: 'CompletedPayment') {
+  async getOrdersWithFilter(userId: string, page = 1, limit = 10, status?: 'CompletedPayment') {
     const skip = (page - 1) * limit;
 
     const whereClause: Prisma.OrderWhereInput = {
@@ -50,9 +56,11 @@ export class OrderService {
               price: true,
               quantity: true,
               isReviewed: true,
+              productId: true,
               product: {
                 select: {
                   name: true,
+                  image: true,
                   reviews: {
                     where: { userId },
                     select: {
@@ -113,9 +121,12 @@ export class OrderService {
             id: true,
             price: true,
             quantity: true,
+            productId: true,
+            isReviewed: true, // 리뷰 여부 추가
             product: {
               select: {
                 name: true,
+                image: true,
                 reviews: {
                   where: { userId }, // 해당 사용자 리뷰만
                   select: {
@@ -228,17 +239,13 @@ export class OrderService {
       throw new BadRequestException('주문할 상품이 존재하지 않습니다.');
     }
 
-    // 총 금액, 수량 계산용
     let subtotal = 0;
     let totalQuantity = 0;
 
-    // Prisma 타입 명시: OrderItemCreateWithoutOrderInput[]
     const orderItemCreates: Prisma.OrderItemCreateWithoutOrderInput[] = [];
-
     const stockUpdates: { stockId: string; decrementBy: number }[] = [];
 
     for (const item of orderItems) {
-      // 상품 조회
       const product = await this.prisma.product.findUnique({
         where: { id: item.productId },
       });
@@ -255,7 +262,7 @@ export class OrderService {
 
       if (!stock) {
         throw new BadRequestException(
-          `상품 ${item.productId}의 해당 사이즈 재고가 존재하지 않습니다`,
+          `상품 ${item.productId}의 해당 사이즈 재고가 존재하지 않습니다.`,
         );
       }
 
@@ -268,7 +275,6 @@ export class OrderService {
       subtotal += product.price * item.quantity;
       totalQuantity += item.quantity;
 
-      // OrderItem create 배열에 추가
       orderItemCreates.push({
         product: { connect: { id: product.id } },
         size: { connect: { id: item.sizeId } },
@@ -282,8 +288,10 @@ export class OrderService {
     const shippingFee = calculateShippingFee(subtotal);
     const totalPrice = subtotal + shippingFee;
 
-    // 사용자 조회
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { grade: true },
+    });
     if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
 
     if (usePoint > user.points) {
@@ -295,8 +303,13 @@ export class OrderService {
       throw new BadRequestException('사용할 포인트가 주문 금액을 초과할 수 없습니다.');
     }
 
-    // 트랜잭션 실행
-    return this.prisma.$transaction(async (tx) => {
+    const rate = user.grade?.rate ?? 0;
+    const earnedPoint = Math.floor(subtotal * (rate / 100));
+
+    // 트랜잭션 외부로 알람 생성용 품절 리스트 저장
+    const outOfStockList: { productId: string; sizeId: number }[] = [];
+
+    const { order } = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
           userId,
@@ -312,24 +325,70 @@ export class OrderService {
         },
       });
 
-      await tx.payment.create({
+      const payment = await tx.payment.create({
         data: {
           orderId: order.id,
           price: paymentPrice,
-          status: 'WaitingPayment',
+          status: 'CompletedPayment', // 바로 결제 완료 상태
           createdAt: new Date(),
         },
+        include: {
+          order: {
+            include: {
+              orderItems: {
+                include: { product: true },
+              },
+            },
+          },
+        },
       });
+
+      const saleLogCreateInput = payment.order.orderItems.map(
+        (item): Prisma.SalesLogCreateManyInput => ({
+          price: item.price * item.quantity,
+          productId: item.productId,
+          userId,
+          quantity: item.quantity,
+          storeId: item.product.storeId,
+        }),
+      );
+
+      await tx.salesLog.createMany({ data: saleLogCreateInput });
+
+      const salesLog = await tx.salesLog.findMany({
+        where: {
+          userId,
+        },
+        select: {
+          price: true,
+        },
+      });
+      const accumulated = salesLog.reduce((a, c) => a + c.price, 0);
+      const grade = await tx.grade.findMany({ select: { minAmount: true, id: true } });
+      let foundIndex = -1;
+      let updateGradeId = user.grade.id;
+      for (let i = 0; i < grade.length - 1; i++) {
+        if (accumulated >= grade[i].minAmount && accumulated < grade[i + 1].minAmount) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex !== -1) {
+        updateGradeId = grade[foundIndex].id;
+      } else {
+        updateGradeId = grade.find((x) => x.id === 'grade_vip')!.id;
+      }
 
       await tx.user.update({
         where: { id: userId },
         data: {
-          points: user.points - usePoint,
+          points: user.points - usePoint + earnedPoint,
+          gradeId: updateGradeId,
         },
       });
 
       for (const { stockId, decrementBy } of stockUpdates) {
-        await tx.stock.update({
+        const updatedStock = await tx.stock.update({
           where: { id: stockId },
           data: {
             quantity: {
@@ -337,25 +396,116 @@ export class OrderService {
             },
           },
         });
+
+        if (updatedStock.quantity === 0) {
+          outOfStockList.push({
+            productId: updatedStock.productId,
+            sizeId: updatedStock.sizeId,
+          });
+        }
       }
 
-      return order;
+      return { order };
     });
+
+    // 트랜잭션 외부에서 알람 생성
+
+    // 판매자에게 품절 알람 보내기
+    for (const { productId, sizeId } of outOfStockList) {
+      await this.alarmService.createOutOfStockAlarm(productId, sizeId);
+    }
+
+    // 장바구니에 해당 상품+사이즈 담긴 buyer들에게 품절 알람 보내기
+    for (const { productId, sizeId } of outOfStockList) {
+      // 품절 상품 재고, 제품명, 사이즈명 조회
+      const stock = await this.prisma.stock.findFirst({
+        where: { productId, sizeId },
+        include: {
+          product: true,
+          size: true,
+        },
+      });
+      if (!stock) continue;
+
+      // 품절 상품 장바구니에 담긴 모든 유저 조회
+      const cartItems = await this.prisma.cartItem.findMany({
+        where: {
+          productId,
+          sizeId,
+        },
+        include: {
+          cart: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
+
+      for (const cartItem of cartItems) {
+        await this.alarmService.createCartOutOfStockAlarm(
+          cartItem.cart.buyerId,
+          stock.product.name,
+          (stock.size.size as { ko: string }).ko || '해당 사이즈',
+        );
+      }
+    }
+
+    return order;
   }
 
   async updateExpiredPayments() {
     const now = new Date();
-    const expiredDate = addDays(now, -14); // 14일 전 날짜 계산
+    const expiredDate = addDays(now, -14); // 14일 전
 
-    await this.prisma.payment.updateMany({
+    // 1. 상태가 WaitingPayment이고 14일 이상 지난 결제 찾기 (관련 orderItems 포함)
+    const expiredPayments = await this.prisma.payment.findMany({
       where: {
-        status: 'WaitingPayment', // 대기 상태 중에서
-        createdAt: { lte: expiredDate }, // 생성일이 14일 이전인 것들만
+        status: 'WaitingPayment',
+        createdAt: { lte: expiredDate },
       },
-      data: {
-        status: 'CompletedPayment', // 상태 변경
+      include: {
+        order: {
+          include: {
+            orderItems: {
+              include: {
+                product: true,
+              },
+            },
+            user: true,
+          },
+        },
       },
     });
+
+    // 2. 트랜잭션으로 결제 상태 변경 + salesLog 생성 + 알람 생성 처리
+    for (const payment of expiredPayments) {
+      await this.prisma.$transaction(async (tx) => {
+        // 결제 상태 변경
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'CompletedPayment' },
+        });
+
+        // salesLog 생성
+        const saleLogCreateInput = payment.order.orderItems.map(
+          (item): Prisma.SalesLogCreateManyInput => ({
+            price: item.price * item.quantity,
+            productId: item.productId,
+            userId: payment.order.userId,
+            quantity: item.quantity,
+            storeId: item.product.storeId,
+          }),
+        );
+
+        await tx.salesLog.createMany({
+          data: saleLogCreateInput,
+        });
+
+        // 알람 생성
+        await this.alarmService.createPurchaseConfirmedAlarm(payment.id);
+      });
+    }
   }
 
   async updateOrder(orderId: string, dto: UpdateOrderDto) {

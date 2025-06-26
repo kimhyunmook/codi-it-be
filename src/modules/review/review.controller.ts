@@ -22,16 +22,20 @@ import { AuthGuard } from 'src/common/guard/auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { SwaggerErrorExamples } from 'src/common/utils/swagger-error-response.util';
 import { ReviewResponseDto } from './dto/review-response.dto';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('review')
-@ApiBearerAuth()
 @Controller('review')
 export class ReviewController {
   constructor(private readonly reviewService: ReviewService) {}
 
   @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @Patch(':reviewId')
-  @ApiOperation({ summary: '리뷰 수정(리뷰ID)' })
+  @ApiOperation({
+    summary: '리뷰 수정(리뷰ID)',
+    description: '리뷰 ID를 사용하여 리뷰를 수정합니다.',
+  })
   @ApiParam({ name: 'reviewId', description: '수정할 리뷰 ID', example: 'review1' })
   @ApiResponse({
     status: 201,
@@ -54,8 +58,12 @@ export class ReviewController {
   }
 
   @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @Delete(':reviewId')
-  @ApiOperation({ summary: '리뷰 삭제(리뷰Id)' })
+  @ApiOperation({
+    summary: '리뷰 삭제(리뷰Id)',
+    description: '리뷰 ID를 사용하여 리뷰를 삭제합니다. 삭제된 리뷰는 더 이상 조회할 수 없습니다.',
+  })
   @ApiResponse({
     status: 200,
     description: '리뷰를 삭제 했습니다',
@@ -76,9 +84,13 @@ export class ReviewController {
     return this.reviewService.deleteReview(reviewId, userId);
   }
 
-  @UseGuards(AuthGuard)
+  @Public()
   @Get(':reviewId')
-  @ApiOperation({ summary: '리뷰 상세 조회(리뷰Id)' })
+  @ApiOperation({
+    summary: '리뷰 상세 조회(리뷰Id)',
+    description:
+      '리뷰 ID를 사용하여 리뷰의 상세 정보를 조회합니다. 리뷰 작성자, 내용, 평점 등의 정보를 포함합니다.',
+  })
   @ApiParam({
     name: 'reviewId',
     required: true,

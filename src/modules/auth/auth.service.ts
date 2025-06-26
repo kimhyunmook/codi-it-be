@@ -18,7 +18,10 @@ export class AuthService {
     loginDto: LoginDto,
     res: Response,
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-    const user = await this.prisma.user.findUnique({ where: { email: loginDto.email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: loginDto.email },
+      include: { grade: true },
+    });
 
     if (!user) throw new UnauthorizedException('Invalid credentials');
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
@@ -30,17 +33,19 @@ export class AuthService {
       name: user.name,
       type: user.type,
       points: user.points,
+      image: user.image,
+      grade: user.grade,
     };
 
     const payload: JwtPayload = { sub: user.id, email: user.email, type: user.type };
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.ACCESS_TOKEN_SECRET,
-      expiresIn: process.env.NODE_ENV === 'development' ? '7d' : '15m',
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRESIN || '15m',
     });
     const refreshToken = this.jwtService.sign(payload, {
       secret: process.env.REFRESH_TOKEN_SECRET,
-      expiresIn: '7d',
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRESIN || '7d',
     });
 
     // ✅ Refresh Token을 DB에 저장
@@ -53,7 +58,7 @@ export class AuthService {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: true, // HTTPS 환경에서만 전송
-      sameSite: 'strict', // CSRF 공격 방지
+      sameSite: 'none', // CSRF 공격 방지
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -87,7 +92,6 @@ export class AuthService {
 
     return { accessToken: newAccessToken };
   }
-
 
   async logout(userId: string): Promise<{ message: string }> {
     // ✅ DB의 refreshToken 제거

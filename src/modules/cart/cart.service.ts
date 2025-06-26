@@ -7,7 +7,7 @@ import {
 import { Cart, CartItem } from '@prisma/client';
 import { JwtPayload } from 'src/modules/auth/dto/payload.interface';
 import { PrismaService } from 'src/common/prisma/prisma.service';
-import { UpdateCartDto } from './dto/update-cart.dto';
+import { UpdateCartBySizesDto } from './dto/update-cart.dto';
 import { UserId } from 'src/types/common';
 
 @Injectable()
@@ -57,92 +57,67 @@ export class CartService {
     return cart;
   }
 
-  async updateCart(userId: UserId['userId'], dto: UpdateCartDto): Promise<CartItem> {
-    if (dto.quantity < 1) {
-      throw new BadRequestException('수량은 1 이상이어야 합니다.');
-    }
+  // cart.service.ts
 
-    // 재고 확인
-    const stock = await this.prisma.stock.findFirst({
-      where: {
-        productId: dto.productId,
-        sizeId: dto.sizeId,
-      },
-    });
-
-    if (!stock) {
-      throw new BadRequestException('해당 사이즈의 재고가 존재하지 않습니다.');
-    }
-
-    if (stock.quantity < dto.quantity) {
-      throw new BadRequestException(`재고가 부족합니다. 현재 수량: ${stock.quantity}`);
-    }
-
-    // 장바구니 조회
+  async updateCartBySizes(
+    userId: UserId['userId'],
+    dto: UpdateCartBySizesDto,
+  ): Promise<CartItem[]> {
     const cart = await this.prisma.cart.findUnique({
       where: { buyerId: userId },
-      include: {
-        items: {
-          include: {
-            product: {
-              include: {
-                stocks: true,
-              },
-            },
-          },
-        },
-      },
+      include: { items: true },
     });
 
     if (!cart) {
       throw new ForbiddenException('장바구니가 존재하지 않습니다.');
     }
 
-    // 기존 장바구니 아이템 존재 여부 확인
-    const existingItem = cart.items.find(
-      (item) =>
-        item.productId === dto.productId &&
-        item.product.stocks.some((stock) => stock.sizeId === dto.sizeId),
-    );
+    const results: CartItem[] = [];
 
-    if (existingItem) {
-      // 수량 차이 계산
-      // const quantityDiff = dto.quantity - existingItem.quantity;
+    for (const { sizeId, quantity } of dto.sizes) {
+      if (quantity < 1) continue;
 
-      // cart.quantity 업데이트 (수량 차이만큼 증감)
-      // await this.prisma.cart.update({
-      //   where: { id: cart.id },
-      //   data: {
-      //     quantity: { increment: quantityDiff },
-      //   },
-      // });
-
-      // 기존 장바구니 아이템 수량 수정
-      return this.prisma.cartItem.update({
-        where: { id: existingItem.id },
-        data: {
-          quantity: dto.quantity,
-        },
-      });
-    } else {
-      // 새 장바구니 아이템 추가
-      // cart.quantity에 새 수량 더하기
-      // await this.prisma.cart.update({
-      //   where: { id: cart.id },
-      //   data: {
-      //     quantity: { increment: dto.quantity },
-      //   },
-      // });
-
-      return this.prisma.cartItem.create({
-        data: {
-          cartId: cart.id,
+      const stock = await this.prisma.stock.findFirst({
+        where: {
           productId: dto.productId,
-          sizeId: dto.sizeId,
-          quantity: dto.quantity,
+          sizeId,
         },
       });
+
+      if (!stock) {
+        throw new BadRequestException(`사이즈 ${sizeId}의 재고가 존재하지 않습니다.`);
+      }
+
+      if (stock.quantity < quantity) {
+        throw new BadRequestException(
+          `사이즈 ${sizeId}의 재고가 부족합니다. 현재 수량: ${stock.quantity}`,
+        );
+      }
+
+      const existingItem = cart.items.find(
+        (item) => item.productId === dto.productId && item.sizeId === sizeId,
+      );
+
+      if (existingItem) {
+        const updated = await this.prisma.cartItem.update({
+          where: { id: existingItem.id },
+          data: { quantity },
+        });
+        results.push(updated);
+      } else {
+        const created = await this.prisma.cartItem.create({
+          data: {
+            cartId: cart.id,
+            productId: dto.productId,
+            sizeId,
+            quantity,
+          },
+        });
+        results.push(created);
+      }
     }
+
+    return results;
   }
 
   async deleteCartItem(userId: string, cartItemId: string) {

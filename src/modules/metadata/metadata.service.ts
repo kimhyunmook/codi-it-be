@@ -10,7 +10,7 @@ export class MetadataService {
   }
 
   public async getCategory(target: string) {
-    if (!target) return this.prisma.category.findMany();
+    if (target === 'all') return this.prisma.category.findMany();
 
     return this.prisma.category.findMany({
       where: { name: target },

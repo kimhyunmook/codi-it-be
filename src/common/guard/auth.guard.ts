@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from 'src/modules/auth/auth.service';
@@ -6,6 +12,7 @@ import { IS_PUBLIC_KEY } from 'src/common/decorators/public.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly Logger = new Logger(AuthGuard.name);
   constructor(
     private readonly authService: AuthService,
     private readonly reflector: Reflector,
@@ -25,12 +32,6 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    // 2) /signup, /login 경로는 인증 스킵 (필요 시 유지하거나 제거)
-    if (req.path.startsWith('/api/auth/signup') || req.path.startsWith('/api/auth/login')) {
-      return true;
-    }
-
-    // 3) accessToken 검증 시도
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
       throw new UnauthorizedException('Authorization 헤더가 없습니다.');
@@ -42,25 +43,24 @@ export class AuthGuard implements CanActivate {
     }
 
     try {
-      // 4) accessToken 검증
+      // accessToken 검증
       const payload = await this.authService.verifyAccessToken(token);
-      req['user'] = payload;  // 요청 객체에 유저 정보 저장
+      req['user'] = payload; // 요청 객체에 유저 정보 저장
       return true;
-
     } catch (err: any) {
       // accessToken 만료인 경우에만 refreshToken 검증 시도
       if (err.name !== 'TokenExpiredError') {
         throw new UnauthorizedException('유효하지 않은 access token입니다.');
       }
 
-      // 5) 쿠키에서 refreshToken 추출
+      //  쿠키에서 refreshToken 추출
       if (!req.cookies || !req.cookies.refreshToken) {
         throw new UnauthorizedException('Access token 만료, Refresh token이 필요합니다.');
       }
       const refreshToken = req.cookies.refreshToken;
 
       try {
-        // 6) refreshToken 검증 및 DB 일치 여부 확인 후 새 accessToken 발급
+        // refreshToken 검증 및 DB 일치 여부 확인 후 새 accessToken 발급
         const newAccessToken = await this.authService.verifyRefreshToken(refreshToken);
         const payload = await this.authService.verifyAccessToken(newAccessToken.accessToken);
 
@@ -69,6 +69,7 @@ export class AuthGuard implements CanActivate {
 
         return true;
       } catch (refreshErr) {
+        this.Logger.log(refreshErr);
         throw new UnauthorizedException('Refresh token이 유효하지 않습니다.');
       }
     }

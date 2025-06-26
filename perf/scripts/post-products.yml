@@ -1,0 +1,33 @@
+config:
+  target: 'http://localhost:8000/api'
+  phases:
+    - duration: 60
+      arrivalRate: 10
+  defaults:
+    headers:
+      Content-Type: application/json
+
+  processor: "./tokenManager.js"
+scenarios:
+  - name: "Get access token"
+    flow:
+      - post:
+          url: "/auth/refresh-token"
+          json:
+            refreshToken: "your_refresh_token_here"
+          capture:
+            json: "$.accessToken"
+            as: "accessToken"
+  - name: 'Product create'          
+    flow:
+      - post:
+          url: "/products"
+          json: 
+            name: "test" 
+            price: 20000
+            image: 'test.jpg'
+            categoryName: top
+            stocks: 
+              sizeId: 1
+              quantity: 3
+            

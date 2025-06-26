@@ -1,7 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { MetadataService } from './metadata.service';
 import { ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { CategoryResponse, GradeResponse, SizeResponse } from './dto/response';
+import { CategoryEnum, CategoryResponse, GradeResponse, SizeResponse } from './dto/response';
 import { Public } from 'src/common/decorators/public.decorator';
 
 @Public()
@@ -18,7 +18,7 @@ export class MetadataController {
   }
 
   @Get('category/:name')
-  @ApiParam({ name: 'name', type: Number, example: 'bottom', required: false })
+  @ApiParam({ name: 'name', type: String, example: 'bottom', required: false, enum: CategoryEnum })
   @ApiOperation({ summary: '카테고리 값 조회', description: '카테고리 값 가져오기' })
   @ApiOkResponse({ type: CategoryResponse, description: '카테고리 값 ', isArray: true })
   private async getCategory(@Param('name') target: string) {

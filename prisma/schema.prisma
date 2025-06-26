@@ -49,6 +49,7 @@ model Store {
   image             String              @default("")
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  detailAddress     String?
   DailyStoreSales   DailyStoreSales[]
   favoriteBy        FavoriteStore[]
   MonthlyStoreSales MonthlyStoreSales[]
@@ -80,15 +81,17 @@ model Product {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   reviewsRating     Int         @default(0)
+  categoryId        String
+  content           String      @default("")
+  isSoldOut         Boolean     @default(false)
   cartItems         CartItem[]
   inquiries         Inquiry[]
   orderItems        OrderItem[]
+  category          Category    @relation("ProductCategory", fields: [categoryId], references: [id])
   store             Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
   reviews           Review[]
   SalesLog          SalesLog[]
   stocks            Stock[]
-  category          Category    @relation("ProductCategory", fields: [categoryId], references: [id])
-  categoryId        String
 }
 
 model Category {
@@ -104,6 +107,8 @@ model Stock {
   quantity  Int     @default(0)
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   size      Size    @relation(fields: [sizeId], references: [id])
+
+  @@unique([sizeId, productId])
 }
 
 model Size {
@@ -176,8 +181,6 @@ model CartItem {
   cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   size      Size     @relation(fields: [sizeId], references: [id])
-
-  @@unique([cartId, productId])
 }
 
 model Order {
@@ -217,6 +220,8 @@ model Payment {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([id, orderId])
 }
 
 model Alarm {

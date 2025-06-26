@@ -7,17 +7,13 @@ import {
   DeleteObjectCommand,
   PutObjectCommandInput,
   GetObjectCommandInput,
+  ListObjectsV2Command,
+  ListObjectsV2CommandOutput,
 } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 
 export interface S3UploadResult {
-  /**
-   * 업로드된 객체의 URL (Public 또는 presigned URL)
-   */
   url: string;
-  /**
-   * 저장된 버킷 내의 Key (예: 'codiit/filename.jpg')
-   */
   key: string;
 }
 
@@ -29,7 +25,6 @@ export class S3Service {
   private region: string;
 
   constructor(private readonly configService: ConfigService) {
-    // 1) 환경 변수에서 값을 읽어온 뒤, undefined 여부를 검사
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
     const region = this.configService.get<string>('AWS_REGION');
@@ -37,24 +32,56 @@ export class S3Service {
     const folderName = this.configService.get<string>('S3_FOLDER_NAME');
 
     if (!accessKeyId || !secretAccessKey || !region || !bucketName) {
-      // 중요한 값이 하나라도 빠져 있으면 서버가 정상 동작할 수 없으므로 에러를 던집니다.
       throw new InternalServerErrorException(
         'AWS S3 설정에 필요한 환경 변수가 설정되지 않았습니다.',
       );
     }
 
-    // 2) 이제 모든 값이 string 으로 확실하므로, 타입 단언 없이 바로 사용
     this.bucketName = bucketName;
-    this.folderName = folderName || ''; // 폴더 이름은 선택적일 수 있으므로 기본값 '' 처리
+    this.folderName = folderName || '';
     this.region = region;
 
     this.s3Client = new S3Client({
       region: this.region,
       credentials: {
-        accessKeyId: accessKeyId, // string 타입이 확실함
-        secretAccessKey: secretAccessKey, // string 타입이 확실함
+        accessKeyId: accessKeyId,
+        secretAccessKey: secretAccessKey,
       },
     });
+  }
+
+  async getAllImageKeys(): Promise<string[]> {
+    const imageKeys: string[] = [];
+    let isTruncated = true;
+    let continuationToken: string | undefined = undefined;
+
+    while (isTruncated) {
+      const command = new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: this.folderName,
+        ContinuationToken: continuationToken,
+      });
+
+      const response: ListObjectsV2CommandOutput = await this.s3Client.send(command);
+      const contents = response.Contents ?? [];
+
+      for (const item of contents) {
+        if (
+          item.Key &&
+          (item.Key.endsWith('.jpg') ||
+            item.Key.endsWith('.jpeg') ||
+            item.Key.endsWith('.png') ||
+            item.Key.endsWith('.webp'))
+        ) {
+          imageKeys.push(item.Key);
+        }
+      }
+
+      isTruncated = response.IsTruncated ?? false;
+      continuationToken = response.NextContinuationToken;
+    }
+
+    return imageKeys;
   }
 
   /**
@@ -152,9 +179,6 @@ export class S3Service {
     }
   }
 
-  /**
-   * 간단한 파일 확장자 기반 Content-Type 반환 헬퍼
-   */
   private _getContentTypeFromFileName(filename: string): string {
     const ext = filename.split('.').pop()!.toLowerCase();
     switch (ext) {

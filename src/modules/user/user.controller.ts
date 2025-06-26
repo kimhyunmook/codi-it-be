@@ -9,12 +9,13 @@ import {
   ApiNotFoundResponse,
   ApiUnauthorizedResponse,
   ApiBadRequestResponse,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
-import { LikesStoreResponse, UserResponse } from './dto/response';
+import { LikeStoreResponse, UserResponse } from './dto/response';
 import { UserConFlictDto, UserNotFoundDto } from './dto/error-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SwaggerErrorExamples } from 'src/common/utils/swagger-error-response.util';
@@ -33,12 +34,8 @@ export class UserController {
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedResponse({ description: '회원 가입 성공한 유저의 값을 반환', type: UserResponse })
   @ApiConflictResponse({ description: '이미 존재하는 유저입니다.', type: UserConFlictDto })
-  @S3Upload('image')
-  private async create(
-    @Body() dto: CreateUserDto,
-    @S3File() s3File: S3UploadResult,
-  ): Promise<UserResponse> {
-    return this.userService.create({ ...dto, image: s3File ? s3File.url : undefined });
+  private async create(@Body() dto: CreateUserDto): Promise<UserResponse> {
+    return this.userService.create({ ...dto });
   }
 
   @Get('me')
@@ -53,6 +50,8 @@ export class UserController {
 
   @Patch('me')
   @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @S3Upload('image')
   @ApiBearerAuth()
   @ApiOperation({ summary: '내 정보 수정' })
   @ApiOkResponse({ description: '내 정보 수정 성공 및 수정된 유저 정보 반환', type: UserResponse })
@@ -60,8 +59,9 @@ export class UserController {
   private async updateMe(
     @CurrentUser('sub') userId: UserId['userId'],
     @Body() dto: UpdateUserDto,
+    @S3File() s3File: S3UploadResult,
   ): Promise<UserResponse> {
-    return this.userService.updateMe({ ...dto, userId });
+    return this.userService.updateMe({ ...dto, userId, image: s3File ? s3File.url : undefined });
   }
 
   @Get('me/likes')
@@ -70,21 +70,24 @@ export class UserController {
   @ApiOperation({ summary: '관심 스토어 조회' })
   @ApiOkResponse({
     description: '내 관심 스토어 조회 성공 및 정보 반환',
-    type: LikesStoreResponse,
+    type: LikeStoreResponse,
     isArray: true,
   })
   @ApiNotFoundResponse({ description: '존재하지 않는 유저 입니다.', type: UserNotFoundDto })
   private async getLikedStores(
     @CurrentUser('sub') userId: UserId['userId'],
-  ): Promise<LikesStoreResponse[]> {
+  ): Promise<LikeStoreResponse[]> {
     return this.userService.getLikedStores(userId);
   }
 
   @Delete('delete')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '회원 탈퇴', description: '현재 로그인한 사용자의 계정을 삭제합니다' })
-  @ApiOkResponse({ description: '회원 탈퇴 성공', type: UserResponse })
+  @ApiOperation({
+    summary: '회원 탈퇴',
+    description: '현재 로그인한 사용자의 계정을 삭제합니다',
+  })
+  @ApiOkResponse({ description: '회원 탈퇴 성공', type: undefined })
   @ApiNotFoundResponse({ description: '존재하지 않는 유저 입니다.', type: UserNotFoundDto })
   @ApiOperation({ summary: '회원 탈퇴', description: '현재 로그인한 사용자의 계정을 삭제합니다' })
   @ApiUnauthorizedResponse({

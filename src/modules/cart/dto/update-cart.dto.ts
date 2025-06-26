@@ -1,17 +1,30 @@
+// dto/update-cart-by-sizes.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsInt, Min, IsNumber } from 'class-validator';
+import { IsArray, ValidateNested, IsNumber, Min, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
 
-export class UpdateCartDto {
-  @ApiProperty({ description: '상품 ID', example: 'product3' })
-  @IsString()
-  productId: string;
-
-  @ApiProperty({ description: ' 사이즈 Id', example: '3' })
+export class SizeQuantityDto {
+  @ApiProperty({ example: 1, description: '사이즈 ID' })
   @IsNumber()
   sizeId: number;
 
-  @ApiProperty({ description: '수량(1 이상)', example: 2, minimum: 1 })
-  @IsInt()
-  @Min(1, { message: '수량은 1 이상이어야 합니다.' })
+  @ApiProperty({ example: 3, description: '수량 (1 이상)' })
+  @IsNumber()
+  @Min(1)
   quantity: number;
+}
+
+export class UpdateCartBySizesDto {
+  @ApiProperty({ example: 'product1', description: '상품 ID (문자열 형태)' })
+  @IsString()
+  productId: string;
+
+  @ApiProperty({
+    type: [SizeQuantityDto],
+    description: '상품별 사이즈와 수량 리스트',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SizeQuantityDto)
+  sizes: SizeQuantityDto[];
 }

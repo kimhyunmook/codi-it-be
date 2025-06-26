@@ -68,10 +68,12 @@ export class inquiryReply {
   createdAt: Date;
   @ApiProperty({ example: '2024-06-01T12:00:00.000Z', description: '수정일' })
   updatedAt: Date;
-  @ApiProperty({ type: PickType(UserResponse, ['id', 'name']), description: '유저 정보' })
-  user: Pick<User, 'id' | 'name'>;
+  @ApiProperty({ type: PickType(UserResponse, ['name']), description: '유저 정보' })
+  user: Pick<User, 'name'>;
 }
 export class InquiriesResponse extends InquiryResponse {
+  @ApiProperty({ type: PickType(UserResponse, ['name']), description: '유저 정보' })
+  user: Pick<User, 'name'>;
   @ApiProperty({ type: inquiryReply, description: '답변 내용' })
   reply?: inquiryReply | null;
 }
@@ -118,6 +120,15 @@ class InquiryItemDto {
 
   @ApiProperty({ type: InquiryProductDto })
   product: InquiryProductDto;
+
+  @ApiProperty({ type: PickType(UserResponse, ['id', 'name']) })
+  user: Pick<UserResponse, 'id' | 'name'>;
+
+  @ApiProperty({ example: new Date(), description: '작성일' })
+  createdAt: Date;
+
+  @ApiProperty({ example: '내용' })
+  content: string;
 }
 
 export class InquiryListResponseDto {

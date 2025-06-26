@@ -117,14 +117,15 @@ export class DashboardService {
       });
 
       // 집계 함수
-      const sumMetrics = (logs: { price: number; quantity: number }[]): SalesLog =>
-        logs.reduce(
+      const sumMetrics = (logs: { price: number; quantity: number }[]): SalesLog => {
+        return logs.reduce(
           (acc, cur) => ({
             totalOrders: acc.totalOrders + cur.quantity,
-            totalSales: acc.totalSales + cur.price * cur.quantity,
+            totalSales: acc.totalSales + cur.price,
           }),
           { totalOrders: 0, totalSales: 0 },
         );
+      };
 
       // 매출 집계 퍼센트
       const todaySum = sumMetrics(todayLogs);
@@ -159,7 +160,9 @@ export class DashboardService {
       // 많이 판매된 상품 top5 조회
       const topSales = await tx.salesLog.groupBy({
         by: ['productId'],
-
+        where: {
+          storeId,
+        },
         _sum: {
           quantity: true,
         },

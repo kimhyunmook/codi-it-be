@@ -1,34 +1,35 @@
 import { ApiProperty, OmitType } from '@nestjs/swagger';
-import { User } from '@prisma/client';
-import { CreatedAtDto } from 'src/common/dto/date.dto';
 import { InquiryReplyResponse, InquiryResponse } from 'src/modules/inquiry/dto/response';
+import { CategoryResponse } from 'src/modules/metadata/dto/response';
 
-export class CategoryNameDto {
-  @ApiProperty({ example: 'CUID', description: '카테고리 ID' })
-  id: string;
-  @ApiProperty({
-    example: 'bottom',
-    description: '카테고리 이름 리스트 (JSON 배열)',
-  })
-  name: string;
+export class ReviewDto {
+  // @ApiProperty({ example: '좋은 제품입니다!', description: '리뷰 내용' })
+  // content: string;
+  // @ApiProperty({ example: 5, description: '별점' })
+  // rating: number;
+  // @ApiProperty({
+  //   example: { id: 'user-cuid', username: 'johndoe' },
+  //   description: '작성자 정보',
+  //   required: false,
+  // })
+  // user?: User;
+
+  @ApiProperty()
+  rate1Length: number;
+  @ApiProperty()
+  rate2Length: number;
+  @ApiProperty()
+  rate3Length: number;
+  @ApiProperty()
+  rate4Length: number;
+  @ApiProperty()
+  rate5Length: number;
+
+  @ApiProperty()
+  sumScore: number;
 }
 
-export class ReviewDto extends CreatedAtDto {
-  @ApiProperty({ example: '좋은 제품입니다!', description: '리뷰 내용' })
-  content: string;
-
-  @ApiProperty({ example: 5, description: '별점' })
-  rating: number;
-
-  @ApiProperty({
-    example: { id: 'user-cuid', username: 'johndoe' },
-    description: '작성자 정보',
-    required: false,
-  })
-  user?: User;
-}
-
-export class StocksDto {
+export class StocksResponse {
   @ApiProperty({ example: 'CUID', description: '재고 ID' })
   id: string;
   @ApiProperty({ example: 'CUID', description: '상품 ID' })
@@ -73,11 +74,11 @@ export class ProductResponse {
   discountEndTime: Date | null;
 
   @ApiProperty({
-    type: [CategoryNameDto],
+    type: [CategoryResponse],
     description: '카테고리 정보 (복수)',
     required: false,
   })
-  category?: CategoryNameDto[];
+  category?: CategoryResponse[];
 
   @ApiProperty({
     type: [ReviewDto],
@@ -92,8 +93,11 @@ export class ProductResponse {
   @ApiProperty({ example: '2025-06-02T00:00:00Z', description: '수정일' })
   updatedAt: Date;
 
-  @ApiProperty({ type: [StocksDto], description: '사이즈 별 상품 수량' })
-  stocks?: StocksDto[];
+  @ApiProperty({ type: [StocksResponse], description: '사이즈 별 상품 수량' })
+  stocks?: StocksResponse[];
+
+  @ApiProperty({ description: '매진 여부' })
+  isSoldOut: boolean;
 }
 
 export class ProductListDto {
@@ -155,6 +159,9 @@ export class ProductListDto {
 
   @ApiProperty({ example: 30, description: '판매 수', type: Number })
   sales: number;
+
+  @ApiProperty({ description: '매진 여부' })
+  isSoldOut: boolean;
 }
 
 export class ProductListResponse {
@@ -206,6 +213,9 @@ export class DetailProductResponse {
   @ApiProperty({ example: 'https://s3-URL', description: '상품 이미지 URL' })
   image: string;
 
+  @ApiProperty({ example: '상품 상세 설명', description: '상품 상세 설명' })
+  content: string;
+
   @ApiProperty({ example: '2025-06-01T00:00:00Z', description: '생성일' })
   createdAt: Date;
 
@@ -250,14 +260,14 @@ export class DetailProductResponse {
   reviewsCount?: number;
 
   @ApiProperty({ type: () => ReviewDto, isArray: true, description: '상품에 대한 리뷰 리스트' })
-  reviews?: ReviewDto[];
+  reviews?: ReviewDto;
 
   @ApiProperty({ type: () => DetailInquiry, isArray: true, description: '상품 문의' })
   inquiries: DetailInquiry[];
 
-  @ApiProperty({ type: () => CategoryNameDto, isArray: true, description: '카테고리 정보 (복수)' })
-  category: CategoryNameDto;
+  @ApiProperty({ type: () => CategoryResponse, isArray: true, description: '카테고리 정보 (복수)' })
+  category: CategoryResponse;
 
-  @ApiProperty({ type: () => StocksDto, isArray: true, description: '사이즈 별 상품 수량' })
-  stocks: Omit<StocksDto, 'productId' | 'sizeId'>[];
+  @ApiProperty({ type: () => StocksResponse, isArray: true, description: '사이즈 별 상품 수량' })
+  stocks: Omit<StocksResponse, 'productId' | 'sizeId'>[];
 }

@@ -1,6 +1,12 @@
 import { Controller, Get, Post, HttpCode, HttpStatus } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExcludeEndpoint,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { FindDashboardResponseDto } from './dto/reponse.dto';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -25,6 +31,7 @@ export class DashboardController {
   }
 
   @Post('run')
+  @ApiExcludeEndpoint()
   @Public()
   @ApiOperation({ summary: '대시보드 실행 (development 전용)' })
   async runDashboard() {
@@ -35,10 +42,6 @@ export class DashboardController {
     return { message: '대시보드 실행 완료' };
   }
 
-  /**
-   * 매일 자정(서버 시간 기준 00:00)에 실행:
-   * - ‘어제’ 일별 요약 생성
-   */
   @Cron('0 0 0 * * *', { name: dateid })
   async handleDailyCron() {
     this.logger.log('[Cron] 모든 매장의 일일 요약 생성 시작...');
@@ -50,10 +53,6 @@ export class DashboardController {
     }
   }
 
-  /**
-   * 매주 월요일 00:00(서버 시간 기준)에 실행:
-   * - ‘지난 주’ 주간 요약 생성
-   */
   @Cron('0 0 * * 1', { name: dateid + '_week' }) // 매주 월요일 00:00
   async handleWeeklyCron() {
     this.logger.log('[Cron] 모든 매장의 주간 요약 생성 시작...');
@@ -65,10 +64,6 @@ export class DashboardController {
     }
   }
 
-  /**
-   * 매월 1일 00:00(서버 시간 기준)에 실행:
-   * - ‘지난 달’ 월간 요약 생성
-   */
   @Cron('0 0 1 * *', { name: dateid + '_month' }) // 매월 1일 00:00
   async handleMonthlyCron() {
     this.logger.log('[Cron] 모든 매장의 월간 요약 생성 시작...');
@@ -80,10 +75,6 @@ export class DashboardController {
     }
   }
 
-  /**
-   * 매년 1월 1일 00:00(서버 시간 기준)에 실행:
-   * - ‘지난 해’ 연간 요약 생성
-   */
   @Cron('0 0 1 1 *', { name: dateid + '_year' }) // 매년 1월 1일 00:00
   async handleYearlyCron() {
     this.logger.log('[Cron] 모든 매장의 연간 요약 생성 시작...');

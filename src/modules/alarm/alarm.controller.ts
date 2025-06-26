@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Patch, Sse } from '@nestjs/common';
 import { AlarmService } from './alarm.service';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiProduces } from '@nestjs/swagger';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AlarmDto } from './dto/alarm.dto';
 import { SwaggerErrorExamples } from 'src/common/utils/swagger-error-response.util';
@@ -20,7 +20,17 @@ interface ServerSentEvent<T> {
 export class AlarmController {
   constructor(private readonly alarmService: AlarmService) {}
 
+  @ApiOperation({
+    summary: '실시간 알람 SSE',
+    description: '30초마다 실시간 알람을 SSE로 전송합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '실시간 알람 스트림',
+    type: [AlarmDto],
+  })
   @Sse('sse')
+  @ApiProduces('text/event-stream')
   sse(@CurrentUser('sub') userId: string): Observable<ServerSentEvent<Alarm[]>> {
     return interval(30000).pipe(
       mergeMap(() =>

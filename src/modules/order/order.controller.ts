@@ -78,7 +78,7 @@ export class OrderController {
     @Query('limit') limit = 10,
     @Query('status') status?: 'CompletedPayment',
   ) {
-    return this.orderService.getOrdersWithDetails(userId, Number(page), Number(limit), status);
+    return this.orderService.getOrdersWithFilter(userId, Number(page), Number(limit), status);
   }
 
   @Get(':orderId')
@@ -118,7 +118,10 @@ export class OrderController {
 
   @UseGuards(AuthGuard)
   @Delete(':orderId')
-  @ApiOperation({ summary: '주문 취소(OrderId)' })
+  @ApiOperation({
+    summary: '주문 취소(OrderId)',
+    description: '주문을 취소합니다. 주문 상태가 "WaitingPayment"인 경우에만 취소할 수 있습니다.',
+  })
   @ApiResponse({
     status: 201,
     description: '주문 취소 성공',
@@ -153,7 +156,10 @@ export class OrderController {
 
   @UseGuards(AuthGuard)
   @Post()
-  @ApiOperation({ summary: '주문 생성' })
+  @ApiOperation({
+    summary: '주문 생성',
+    description: '사용자가 장바구니에 담은 상품으로 주문을 생성합니다.',
+  })
   @ApiResponse({
     status: 201,
     description: '주문 생성 성공',

@@ -20,41 +20,17 @@ import {
   ProductListResponse,
   ProductResponse,
 } from './dto/response';
-import { Prisma } from '@prisma/client';
+import { Prisma, Review } from '@prisma/client';
 import DiscountPrice from 'src/common/utils/discountPrice';
-
-const include: Prisma.ProductInclude = {
-  store: { select: { id: true, name: true } },
-  stocks: {
-    select: { id: true, quantity: true, size: { select: { id: true, name: true } } },
-  },
-  category: true,
-  reviews: true,
-  inquiries: {
-    select: {
-      id: true,
-      title: true,
-      content: true,
-      status: true,
-      isSecret: true,
-      createdAt: true,
-      updatedAt: true,
-      reply: {
-        select: {
-          id: true,
-          content: true,
-          user: { select: { id: true, name: true } },
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-    },
-  },
-};
+import { ProductInclude } from './fragments/include';
+import { AlarmService } from '../alarm/alarm.service';
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alarmService: AlarmService,
+  ) {}
 
   public async create(dto: CreateProductDto & UserId): Promise<DetailProductResponse> {
     const {
@@ -67,9 +43,10 @@ export class ProductService {
       image,
       categoryName,
       stocks,
+      content,
     } = dto;
 
-    return await this.prisma.$transaction(async (tx) => {
+    const product = await this.prisma.$transaction(async (tx) => {
       const store = await tx.store.findFirst({
         where: {
           userId,
@@ -97,6 +74,7 @@ export class ProductService {
           image,
           storeId: store.id,
           categoryId: category.id,
+          content,
         },
       });
 
@@ -124,7 +102,7 @@ export class ProductService {
 
       const result = await tx.product.findUnique({
         where: { id: product.id },
-        include,
+        include: ProductInclude,
       });
       if (!result) throw new NotFoundException(ProductErrorMsg.NotFound);
       const {
@@ -133,6 +111,7 @@ export class ProductService {
         discountEndTime: resultDiscountEndTIme,
         discountStartTime: resultDiscountStartTime,
         price: resultPrice,
+        reviews,
         ...args
       } = result;
       const storeName = resultStore.name;
@@ -140,8 +119,11 @@ export class ProductService {
       if (resultDiscountEndTIme && resultDiscountStartTime) {
         discountPrice = DiscountPrice(resultPrice, resultDiscountRate);
       }
+      const reviewContent = this.reviewsContent(reviews);
+
       return {
         storeName,
+        reviews: reviewContent,
         price: resultPrice,
         discountPrice,
         discountRate: resultDiscountRate,
@@ -150,10 +132,15 @@ export class ProductService {
         ...args,
       };
     });
+
+    await this.alarmService.createNewProductInFavoriteStoreAlarm(product.storeId, name);
+
+    return product;
   }
 
   public async update(dto: UpdateProductDto & UserId): Promise<DetailProductResponse> {
     const {
+      id,
       userId,
       name,
       discountEndTime,
@@ -161,9 +148,12 @@ export class ProductService {
       discountStartTime,
       price,
       image,
+      content,
       categoryName,
+      isSoldOut,
+      stocks,
     } = dto;
-
+    const booleanSoldOut = isSoldOut === 'true' ? true : false;
     const product = await this.prisma.$transaction(async (tx) => {
       const store = await tx.store.findFirst({
         where: { userId },
@@ -171,32 +161,54 @@ export class ProductService {
       if (!store) throw new NotFoundException(StoreErrorMsg.NotFound);
 
       const targetProduct = await tx.product.findFirst({
-        where: { storeId: store.id },
+        where: { storeId: store.id, id },
       });
       if (!targetProduct) throw new NotFoundException(ProductErrorMsg.NotFound);
 
       const category = await tx.category.findFirst({ where: { name: categoryName } });
       if (!category) throw new NotFoundException(ProductErrorMsg.NotCategory);
 
+      if (stocks) {
+        const parse = JSON.parse(stocks);
+        await tx.stock.deleteMany({
+          where: { productId: targetProduct.id },
+        });
+        await tx.stock.createManyAndReturn({
+          data: parse.map((data): Prisma.StockCreateManyInput => {
+            return {
+              productId: targetProduct.id,
+              sizeId: data.sizeId,
+              quantity: data.quantity,
+            };
+          }),
+        });
+      }
+
       const result = await tx.product.update({
         where: { id: targetProduct.id },
         data: {
-          name,
-          discountEndTime,
-          discountStartTime,
-          discountRate,
-          price,
-          image,
+          name: name ? name : targetProduct.name,
+          discountEndTime: discountEndTime ? discountEndTime : targetProduct.discountEndTime,
+          discountStartTime: discountStartTime
+            ? discountStartTime
+            : targetProduct.discountStartTime,
+          discountRate: discountRate ? Number(discountRate) : targetProduct.discountRate,
+          content,
+          price: price ? Number(price) : targetProduct.price,
+          image: image ? image : targetProduct.image,
           categoryId: category.id,
+          isSoldOut: booleanSoldOut,
         },
-        include,
+        include: ProductInclude,
       });
+
       const {
         store: resultStore,
         discountRate: resultDiscountRate,
         discountEndTime: resultDiscountEndTIme,
         discountStartTime: resultDiscountStartTime,
         price: resultPrice,
+        reviews,
         ...args
       } = result;
       const storeName = resultStore.name;
@@ -204,8 +216,11 @@ export class ProductService {
       if (resultDiscountEndTIme && resultDiscountStartTime) {
         discountPrice = DiscountPrice(resultPrice, resultDiscountRate);
       }
+      const reviewContent = this.reviewsContent(reviews);
+
       return {
         storeName,
+        reviews: reviewContent,
         price: resultPrice,
         discountPrice,
         discountRate: resultDiscountRate,
@@ -250,7 +265,7 @@ export class ProductService {
         orderBy = { createdAt: 'desc' };
         break;
       case SortOption.HIGH_RATING:
-        orderBy = {};
+        orderBy = { reviewsRating: 'desc' };
         break;
       case SortOption.SALES_RANKING:
         orderBy = {
@@ -274,7 +289,7 @@ export class ProductService {
 
       ...(favoriteStore && {
         store: {
-          name: {
+          id: {
             contains: favoriteStore,
             mode: 'insensitive',
           },
@@ -300,6 +315,22 @@ export class ProductService {
             name: {
               contains: strSearch,
               mode: 'insensitive',
+            },
+          },
+          {
+            store: {
+              name: {
+                contains: strSearch,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            category: {
+              name: {
+                contains: strSearch,
+                mode: 'insensitive',
+              },
             },
           },
         ],
@@ -328,7 +359,7 @@ export class ProductService {
       });
       const now = new Date();
 
-      let responseList: ProductListDto[] = list.map((product) => {
+      const responseList: ProductListDto[] = list.map((product) => {
         const {
           discountRate,
           discountEndTime,
@@ -337,6 +368,8 @@ export class ProductService {
           reviews,
           SalesLog,
           store,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          content,
           ...args
         } = product;
         const storeName = store.name;
@@ -349,11 +382,6 @@ export class ProductService {
 
         const sales = SalesLog.reduce((a, c) => a + c.quantity, 0);
 
-        // const reviewsRating =
-        //   reviews.length > 0
-        //     ? reviews.reduce((acc, cur) => acc + cur.rating, 0) / reviews.length
-        //     : 0;
-
         return {
           ...args,
           storeName,
@@ -362,13 +390,10 @@ export class ProductService {
           discountEndTime,
           discountPrice,
           discountRate,
-          // reviewsRating,
           sales,
           reviewsCount: reviews.length,
         };
       });
-      if (orderBy === SortOption.HIGH_RATING)
-        responseList = responseList.sort((a, b) => b.reviewsRating - a.reviewsRating);
 
       return {
         list: responseList,
@@ -377,13 +402,49 @@ export class ProductService {
     });
   }
 
-  async findProduct(dto: FindProductDto): Promise<DetailProductResponse> {
+  private reviewsContent(reviews: Review[]) {
+    const reviewContent = reviews.reduce(
+      (a, c, i) => {
+        switch (c.rating) {
+          case 1:
+            a = { ...a, rate1Length: a.rate1Length + 1 };
+            break;
+          case 2:
+            a = { ...a, rate2Length: a.rate2Length + 1 };
+            break;
+          case 3:
+            a = { ...a, rate3Length: a.rate3Length + 1 };
+            break;
+          case 4:
+            a = { ...a, rate4Length: a.rate4Length + 1 };
+            break;
+          case 5:
+            a = { ...a, rate5Length: a.rate5Length + 1 };
+            break;
+        }
+        a.sumScore += c.rating;
+        if (i === reviews.length - 1) a.sumScore = a.sumScore / reviews.length;
+        return a;
+      },
+      {
+        rate1Length: 0,
+        rate2Length: 0,
+        rate3Length: 0,
+        rate4Length: 0,
+        rate5Length: 0,
+        sumScore: 0,
+      },
+    );
+    return reviewContent;
+  }
+
+  public async findProduct(dto: FindProductDto): Promise<DetailProductResponse> {
     const { productId } = dto;
 
-    const product = await this.prisma.$transaction(async (tx) => {
+    return await this.prisma.$transaction(async (tx) => {
       const result = await tx.product.findUnique({
         where: { id: productId },
-        include,
+        include: ProductInclude,
       });
       if (!result) throw new NotFoundException(ProductErrorMsg.NotFound);
       const {
@@ -405,6 +466,9 @@ export class ProductService {
       if (discountStartTime && discountEndTime) {
         discountPrice = DiscountPrice(price, discountRate);
       }
+
+      const reviewContent = this.reviewsContent(reviews);
+
       return {
         ...args,
         storeId,
@@ -415,13 +479,12 @@ export class ProductService {
         discountStartTime,
         discountEndTime,
         reviewsCount,
-        reviews,
+        reviews: reviewContent,
         inquiries,
         category,
         stocks,
       };
     });
-    return product;
   }
 
   async deleteProduct(dto: DeleteProductDto & UserId): Promise<ProductResponse> {

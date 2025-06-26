@@ -88,7 +88,7 @@ export class AlarmService {
     if (!stock || stock.quantity > 0) return;
 
     const storeOwnerId = stock.product.store.userId;
-    const sizeName = (stock.size.size as any).kr || '해당 사이즈';
+    const sizeName = (stock.size.size as any).ko || '해당 사이즈';
     const productName = stock.product.name;
 
     const content = `${productName}의 ${sizeName} 사이즈가 품절되었습니다.`;
@@ -110,6 +110,52 @@ export class AlarmService {
     for (const favorite of favoriteUsers) {
       await this.createAlarm(favorite.userId, content);
     }
+  }
+
+  // 문의 생성 시 호출
+  async createProductInquiryAlarmToSeller(productId: string, buyerId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        store: true,
+      },
+    });
+
+    if (!product) return;
+
+    const sellerId = product.store.userId;
+    const content = `${product.name}에 새로운 문의가 등록되었습니다.`;
+
+    if (sellerId !== buyerId) {
+      // 본인이 자기 상품에 문의한 경우는 제외
+      await this.createAlarm(sellerId, content);
+    }
+  }
+
+  // 답변 등록 시 호출
+  async createInquiryAnswerAlarmToBuyer(inquiryId: string) {
+    const inquiry = await this.prisma.inquiry.findUnique({
+      where: { id: inquiryId },
+      include: {
+        user: true,
+        product: true,
+      },
+    });
+
+    if (!inquiry) return;
+
+    const content = `${inquiry.product.name}에 대한 문의에 답변이 달렸습니다.`;
+    await this.createAlarm(inquiry.userId, content);
+  }
+
+  async createCartOutOfStockAlarm(userId: string, productName: string, sizeName: string) {
+    const content = `장바구니에 담은 상품 '${productName} (${sizeName})'이 품절되었습니다.`;
+    await this.prisma.alarm.create({
+      data: {
+        userId,
+        content,
+      },
+    });
   }
 
   // alarm.service.ts

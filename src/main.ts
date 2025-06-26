@@ -25,10 +25,13 @@ async function bootstrap() {
 
   app.useGlobalPipes(
     new ValidationPipe({
+      transform: true, // 자동 타입 변환
       whitelist: true, // DTO에 없는 프로퍼티는 제거
       forbidNonWhitelisted: true, // 허용되지 않은 프로퍼티가 있으면 400 에러
-      transform: true, // 자동 타입 변환
       stopAtFirstError: true, // 첫 번째 에러에서 멈춤
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
   // global interceptor

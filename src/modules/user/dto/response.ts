@@ -1,18 +1,18 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { User, UserType } from '@prisma/client';
 import { GradeResponse } from 'src/modules/metadata/dto/response';
 import { StoreResponse } from 'src/modules/store/dto/response.dto';
 
-export class LikesStoreResponse {
-  @ApiProperty({ example: 'CUID', description: '스토어 ID' })
+export class LikeStoreResponse {
+  @ApiPropertyOptional({ example: 'CUID', description: '스토어 ID' })
   storeId?: string;
-  @ApiProperty({ example: 'CUID', description: '유저 ID' })
+  @ApiPropertyOptional({ example: 'CUID', description: '유저 ID' })
   userId?: string;
   @ApiProperty({ description: '가게 정보', type: StoreResponse })
   store: StoreResponse;
 }
 
-export class UserResponse implements Omit<User, 'gradeId'> {
+export class UserResponse implements Omit<User, 'gradeId' | 'refreshToken'> {
   @ApiProperty({ description: '유저 KEY ID', example: 'CUID' })
   id: string;
 
@@ -37,19 +37,11 @@ export class UserResponse implements Omit<User, 'gradeId'> {
   @ApiProperty({ description: '유저 정보 업데이트일', example: '2025-05-29T06:00:41.976Z' })
   updatedAt: Date;
 
-  @ApiProperty({ description: '유저 refreshToken', example: 'refresh token' })
-  refreshToken: string | null;
-
   @ApiProperty({
     description: '등급 정보 (nullable)',
     type: GradeResponse,
     required: false,
-    example: {
-      id: 'grade_green',
-      name: '그린',
-      rate: 10,
-      minAmount: 50000,
-    },
+    example: GradeResponse,
   })
   grade?: GradeResponse | null;
 

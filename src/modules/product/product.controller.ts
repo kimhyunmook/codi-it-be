@@ -24,6 +24,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -43,8 +44,8 @@ import { DetailProductResponse, ProductListResponse, ProductResponse } from './d
 import { Inquiry } from '@prisma/client';
 import { InquiryResponse } from '../inquiry/dto/response';
 import { InquiriesResponse } from '../inquiry/dto/response';
-// impsort { S3File, S3Upload } from 'src/common/decorators/s3.decorator';
-// import { S3UploadResult } from '../s3/s3.service';
+import { S3File, S3Upload } from 'src/common/decorators/s3.decorator';
+import { S3UploadResult } from '../s3/s3.service';
 
 @ApiTags('Product')
 @Controller('products')
@@ -56,8 +57,8 @@ export class ProductController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  // @S3Upload('image')
-  // @ApiConsumes('multipart/form-data')
+  @S3Upload('image')
+  @ApiConsumes('multipart/form-data')
   @ApiBearerAuth()
   @ApiOperation({ summary: '새 상품 등록', description: '상품 등록' })
   @ApiCreatedResponse({
@@ -75,18 +76,18 @@ export class ProductController {
   private async create(
     @Body() dto: CreateProductDto,
     @CurrentUser('sub') userId: string,
-    // @S3File() s3File: S3UploadResult,
+    @S3File() s3File: S3UploadResult,
   ): Promise<DetailProductResponse> {
     return this.productService.create({
       ...dto,
       userId,
-      // image: s3File ? s3File.url : undefined
+      image: s3File ? s3File.url : undefined,
     });
   }
 
   @Patch(':productId')
   @HttpCode(HttpStatus.OK)
-  // @S3Upload('image')
+  @S3Upload('image')
   @ApiConsumes('multipart/form-data')
   @ApiBearerAuth()
   @ApiOperation({ summary: '상품 수정' })
@@ -96,15 +97,19 @@ export class ProductController {
     description: '상품을 찾을 수 없습니다. | 카테고리가 없습니다.',
     type: ProductNotFoundDto,
   })
+  @ApiBody({ type: UpdateProductDto })
   private async update(
-    @Body() dto: UpdateProductDto,
+    @Param('productId') id: string,
+    @Body() dto: Omit<UpdateProductDto, 'id'>,
     @CurrentUser('sub') userId: string,
-    // @S3File() s3File: S3UploadResult,
+    @S3File() s3File: S3UploadResult,
   ): Promise<DetailProductResponse> {
+    console.log(dto.image);
     return this.productService.update({
       ...dto,
+      id,
       userId,
-      // image: s3File ? s3File.url : undefined
+      image: s3File ? s3File.url : undefined,
     });
   }
 

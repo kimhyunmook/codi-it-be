@@ -1,4 +1,5 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { PaymentStatus, Prisma, PrismaClient } from '@prisma/client';
 import gradeData from './data/grade';
 import { storeData } from './data/store';
 import { categoryData } from './data/category';
@@ -7,15 +8,32 @@ import { orderData } from './data/order';
 import { productData } from './data/product';
 import { reviewData } from './data/review';
 import { sizeData } from './data/size';
-import { orderItemData } from './data/orderItem';
-import { paymentData } from './data/payment';
 import { inquiryData } from './data/inquiry';
+import buyerName from './data/buyerName';
 
 const prisma = new PrismaClient();
 const random = (target: any[]) => Math.floor(Math.random() * target.length);
 const now = new Date();
 
-async function PrismaSeed() {
+const getRandomDateWithin30Days = () => {
+  const offset = Math.floor(Math.random() * 61) - 30; // -30 ~ +30
+  const randomDate = new Date();
+  randomDate.setDate(now.getDate() + offset);
+  return randomDate;
+};
+
+const MIN_PRICE = 5000;
+const MAX_PRICE = 300000;
+
+const getRandomPrice = () => {
+  const minUnit = MIN_PRICE / 100; // 50
+  const maxUnit = MAX_PRICE / 100; // 3000
+
+  const randomUnit = Math.floor(Math.random() * (maxUnit - minUnit + 1)) + minUnit;
+  return randomUnit * 100;
+};
+
+async function CreateSeed() {
   const timeTxt = '걸린시간';
   console.time(timeTxt);
   console.log('🎉 Seed 시작');
@@ -67,16 +85,27 @@ async function PrismaSeed() {
           };
         }),
       });
-      const buyer = await tx.user.createManyAndReturn({
-        data: [
-          {
-            name: '구매자',
-            email: 'buyer@codiit.com',
-            password: '$2b$10$ntrEvGluJUWdjP3tAALiX.9/iTiQzSY/yrBoEdZBtoufgpcxCHDAa',
-            type: 'BUYER',
-          },
-        ],
+
+      const buyers = Array.from({ length: 29 }).map((_, i): Prisma.UserCreateManyInput => {
+        return {
+          name: buyerName[i].name,
+          email: `buyer${i}@codiit.com`,
+          password: '$2b$10$ntrEvGluJUWdjP3tAALiX.9/iTiQzSY/yrBoEdZBtoufgpcxCHDAa',
+          type: 'BUYER',
+        };
       });
+      buyers.push({
+        name: '구매자',
+        email: 'buyer@codiit.com',
+        password: '$2b$10$ntrEvGluJUWdjP3tAALiX.9/iTiQzSY/yrBoEdZBtoufgpcxCHDAa',
+        type: 'BUYER',
+      });
+
+      const buyer = await tx.user.createManyAndReturn({
+        data: buyers,
+      });
+
+      // const testBuyer = buyer[buyer.length - 1];
       line('user 테이블', seller.length + buyer.length);
 
       const store = await tx.store.createManyAndReturn({
@@ -93,69 +122,151 @@ async function PrismaSeed() {
         data: Array.from({ length: 7 }).map((_, i): Prisma.FavoriteStoreCreateManyInput => {
           return {
             storeId: store[i].id,
-            userId: buyer[0].id,
+            userId: buyer[buyer.length - 1].id,
           };
         }),
       });
       line('favoriteStore 테이블', favoriteStore.length);
 
       const product = await tx.product.createManyAndReturn({
-        data: Array.from({ length: store.length * productData.length }).map(() => {
-          return {
-            ...productData[random(productData)],
-            storeId: store[random(store)].id,
-            categoryId: category[random(category)].id,
-          };
-        }),
+        data: Array.from({ length: (store.length * productData.length) / 4 }).map(
+          (): Prisma.ProductCreateManyInput => {
+            const { categoryName, ...args } = productData[random(productData)];
+            return {
+              ...args,
+              price: getRandomPrice(),
+              storeId: store[random(store)].id,
+              categoryId: category.find((x) => x.name === categoryName)!.id,
+              createdAt: getRandomDateWithin30Days(),
+              isSoldOut: random(Array.from({ length: 2 })) % 2 === 0 ? false : true,
+            };
+          },
+        ),
       });
       line('product 테이블', product.length);
 
+      const stock = await Promise.all(
+        product.map(async (data) => {
+          return Promise.all(
+            Array.from({ length: random(size) }).map((_, i) =>
+              tx.stock.create({
+                data: {
+                  productId: data.id,
+                  sizeId: i + 1,
+                  quantity: random(Array.from({ length: 30 })),
+                },
+              }),
+            ),
+          );
+        }),
+      );
+      line('stock 테이블', stock.length);
+
       const inquiry = await tx.inquiry.createManyAndReturn({
-        data: Array.from({ length: product.length }).map((): Prisma.InquiryCreateManyInput => {
+        data: Array.from({ length: product.length * 4 }).map((): Prisma.InquiryCreateManyInput => {
           const inquryidx = random(inquiryData);
           const productidx = random(product);
+          const buyeridx = random(buyer);
+
           return {
             title: inquiryData[inquryidx].title,
             content: inquiryData[inquryidx].content,
-            userId: buyer[0].id,
+            userId: buyer[buyeridx].id,
             productId: product[productidx].id,
+            isSecret: random(Array.from({ length: 2 })) % 2 === 0 ? true : false,
           };
         }),
         include: { product: { select: { store: { select: { userId: true } } } } },
       });
       line('inquiry 테이블', inquiry.length);
 
-      const reply = await tx.reply.createManyAndReturn({
-        data: Array.from({ length: inquiry.length / 2 }, (_, i) => inquiry[i]).map(
-          (data): Prisma.ReplyCreateManyInput => {
-            return {
-              inquiryId: data.id,
-              content: data.title + '의 답변 입니다.',
-              userId: data.product.store.userId,
-            };
-          },
-        ),
+      const inquiriesToReply = Array.from({ length: inquiry.length / 4 }, (_, i) => inquiry[i]);
+      const inquiriesUpdates: Promise<any>[] = [];
+      const replyData = inquiriesToReply.map((data, i): Prisma.ReplyCreateManyInput => {
+        if (i % 3 === 0)
+          inquiriesUpdates.push(
+            tx.inquiry.update({
+              where: { id: data.id },
+              data: { status: 'CompletedAnswer' },
+            }),
+          );
+
+        return {
+          inquiryId: data.id,
+          content: `${data.title}의 답변 입니다.`,
+          userId: data.product.store.userId,
+          createdAt: getRandomDateWithin30Days(),
+        };
       });
-      line('line 테이블 ', reply.length);
+      await Promise.all(inquiriesUpdates);
+      const reply = await tx.reply.createManyAndReturn({ data: replyData });
+      line('reply 테이블 ', reply.length);
 
       const order = await tx.order.createManyAndReturn({
-        data: orderData.map((data, i) => {
+        data: Array.from({ length: buyer.length * 5 }).map((): Prisma.OrderCreateManyInput => {
+          const idx = random(orderData);
+          const user = buyer[random(buyers)];
           return {
-            userId: buyer[0].id,
-            name: buyer[0].name,
-            phoneNumber: orderData[i].phoneNumber,
-            address: orderData[i].address,
-            totalQuantity: orderData[i].totalQuantity,
-            subtotal: orderData[i].subtotal,
+            userId: user.id,
+            name: user.name,
+            phoneNumber: orderData[idx].phoneNumber,
+            address: orderData[idx].address,
+            subtotal: orderData[idx].subtotal,
+            createdAt: getRandomDateWithin30Days(),
           };
         }),
       });
       line('order 테이블', order.length);
 
+      const orderItem = await tx.orderItem.createManyAndReturn({
+        data: Array.from({ length: order.length * 3 }).map((): Prisma.OrderItemCreateManyInput => {
+          const orderidx = random(order);
+          const productidx = random(product);
+          const sizeidx = random(size);
+          const quantity = random(Array.from({ length: 25 })) + 1;
+          return {
+            productId: product[productidx].id,
+            orderId: order[orderidx].id,
+            sizeId: size[sizeidx].id,
+            price: product[productidx].price * quantity,
+            quantity,
+          };
+        }),
+      });
+      line('orderItem 테이블', orderItem.length);
+
+      const review = await tx.review.createManyAndReturn({
+        data: orderItem.map((data): Prisma.ReviewCreateManyInput => {
+          const reviewidx = random(reviewData);
+          const rating = random(Array.from({ length: 5 })) + 1;
+
+          return {
+            userId: order.find((x) => x.id === data.orderId)!.userId,
+            productId: data.productId,
+            orderItemId: data.id,
+            content: reviewData[reviewidx].content,
+            rating,
+            createdAt: getRandomDateWithin30Days(),
+          };
+        }),
+      });
+      const findProduct = await tx.product.findMany({
+        select: { id: true, reviews: { select: { rating: true } } },
+      });
+      await Promise.all(
+        findProduct.map((data) => {
+          const { id, reviews } = data;
+          const reviewsRating =
+            reviews.length > 0 ? reviews.reduce((a, c) => a + c.rating, 0) / reviews.length : 0;
+          return tx.product.update({ where: { id }, data: { reviewsRating } });
+        }),
+      );
+      line('review 테이블', review.length);
+
       const cart = await tx.cart.createManyAndReturn({
         data: cartData.map(
           (): Prisma.CartCreateManyInput => ({
-            buyerId: buyer[0].id,
+            buyerId: buyer[buyer.length - 1].id,
           }),
         ),
       });
@@ -163,9 +274,22 @@ async function PrismaSeed() {
 
       const payment = await tx.payment.createManyAndReturn({
         data: order.map((data, i): Prisma.PaymentCreateManyInput => {
+          let status: PaymentStatus = PaymentStatus.WaitingPayment;
+          switch (i % 3) {
+            case 0:
+              status = PaymentStatus.WaitingPayment;
+              break;
+            case 1:
+              status = PaymentStatus.CompletedPayment;
+              break;
+            case 2:
+              status = PaymentStatus.CancelledPayment;
+              break;
+          }
           return {
             orderId: data.id,
-            price: paymentData[i].price,
+            price: data.subtotal - data.usePoint,
+            status,
           };
         }),
       });
@@ -185,70 +309,34 @@ async function PrismaSeed() {
       });
       line('cartItem 테이블', cartItem.length);
 
-      const orderItem = await tx.orderItem.createManyAndReturn({
-        data: orderItemData.map((): Prisma.OrderItemCreateManyInput => {
-          const orderidx = random(order);
-          const productidx = random(product);
-          const sizeidx = random(size);
-
-          return {
-            orderId: order[orderidx].id,
-            productId: product[productidx].id,
-            sizeId: size[sizeidx].id,
-            price: product[productidx].price,
-          };
-        }),
+      const complteProducts = await tx.payment.findMany({
+        where: { status: 'CompletedPayment' },
+        select: {
+          updatedAt: true,
+          order: {
+            select: { userId: true, orderItems: { select: { product: true, quantity: true } } },
+          },
+        },
       });
-      line('orderItem 테이블', orderItem.length);
-
-      const review = await tx.review.createManyAndReturn({
-        data: reviewData.map((data, i): Prisma.ReviewCreateManyInput => {
-          const idx = i % orderItem.length; // 순환을 위해 모듈러 연산 사용
-
-          return {
-            ...data,
-            productId: orderItem[idx].productId,
-            userId: buyer[0].id,
-            orderItemId: orderItem[idx].id,
-          };
-        }),
-      });
-      line('review 테이블', review.length);
-
-      const stock = await tx.stock.createManyAndReturn({
-        data: product.map((data): Prisma.StockCreateManyInput => {
-          const sizeidx = random(size);
-          return {
-            productId: data.id,
-            sizeId: size[sizeidx].id,
-            quantity: random(Array.from({ length: 30 })),
-          };
-        }),
-      });
-      line('stock 테이블', stock.length);
+      const saleLogData = complteProducts
+        .map((data) =>
+          data.order.orderItems.map((item): Prisma.SalesLogCreateManyInput => {
+            return {
+              userId: data.order.userId,
+              productId: item.product.id,
+              storeId: item.product.storeId,
+              price: item.product.price * item.quantity,
+              quantity: item.quantity,
+              soldAt: data.updatedAt,
+            };
+          }),
+        )
+        .flat();
 
       const saleLog = await tx.salesLog.createManyAndReturn({
-        data: Array.from({ length: product.length }, (_, i) => i).map((c, index) => {
-          const quantity = Math.floor(Math.random() * 10 + 1);
-          const idx = random(store);
-          const productidx = random(product);
-
-          return {
-            productId: product[productidx].id,
-            price: product[productidx].price * quantity,
-            quantity,
-            userId: store[idx].userId,
-            storeId: store[idx].id,
-            soldAt:
-              index < 5
-                ? new Date()
-                : new Date(
-                    now.setDate(now.getDate() + Math.floor(Math.random() * 30 - 15)) +
-                      Math.floor(Math.random() * 24) * 60 * 60 * 1000,
-                  ),
-          };
-        }),
+        data: saleLogData,
       });
+
       line('salesLog 테이블', saleLog.length);
     });
 
@@ -260,9 +348,54 @@ async function PrismaSeed() {
     await prisma.$disconnect();
   }
 }
-void PrismaSeed();
+// void CreateSeed();
 
-const line = (text: string, text2: string | number) => {
+async function UpdateSeed() {
+  await prisma.$transaction(async (tx) => {
+    const find = await tx.product.findMany();
+
+    await Promise.all(
+      find.map((data) => {
+        const productInfo = productData.find((x) => x.name === data.name);
+        if (!productInfo) return Promise.resolve();
+        return tx.product.update({
+          where: { id: data.id, name: productInfo.name },
+          data: {
+            content: productInfo.content,
+          },
+        });
+      }),
+    );
+  });
+  line('product 테이블 업데이트');
+}
+// void UpdateSeed();
+
+// async function AddSeed() {
+//   //favoirte buyer@codiit.com
+//   await prisma.$transaction(async (tx) => {
+//     const buyerCodiit = await tx.user.findFirst({
+//       where: {
+//         email: 'buyer@codiit.com',
+//       },
+//       select: { id: true },
+//     });
+//     const store = await tx.store.findMany();
+
+//     if (!buyerCodiit || !store) return console.log('에러');
+//     await tx.favoriteStore.deleteMany({ where: { userId: buyerCodiit.id } });
+
+//     await Promise.all(
+//       store.map((v) =>
+//         tx.favoriteStore.create({ data: { userId: buyerCodiit.id, storeId: v.id } }),
+//       ),
+//     );
+//   });
+// }
+
+// void AddSeed();
+
+const line = (text: string, text2?: string | number) => {
   console.log(`✅ ${text}`, text2);
   console.log('----------------------------');
 };

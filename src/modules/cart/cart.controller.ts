@@ -3,7 +3,7 @@ import { CartService } from './cart.service';
 import { JwtPayload } from 'src/modules/auth/dto/payload.interface';
 import { ApiBearerAuth, ApiResponse, ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Request } from 'express';
-import { UpdateCartDto } from './dto/update-cart.dto';
+import { UpdateCartBySizesDto } from './dto/update-cart.dto';
 import { CartResponseDto } from './dto/cart-response.dto';
 import { CartItemDetailDto } from './dto/cart-item-detail-response.dto';
 import { SwaggerErrorExamples } from 'src/common/utils/swagger-error-response.util';
@@ -17,7 +17,10 @@ export class CartController {
   constructor(private readonly cartService: CartService) {}
 
   @Post()
-  @ApiOperation({ summary: '장바구니 생성' })
+  @ApiOperation({
+    summary: '장바구니 생성',
+    description: '사용자의 장바구니를 생성합니다. 이미 존재하는 경우 해당 장바구니를 반환합니다.',
+  })
   @ApiResponse({
     status: 201,
     description: '장바구니가 성공적으로 생성되었습니다.',
@@ -55,7 +58,10 @@ export class CartController {
   }
 
   @Get()
-  @ApiOperation({ summary: '장바구니 조회' })
+  @ApiOperation({
+    summary: '장바구니 조회',
+    description: '사용자의 장바구니를 조회합니다. 장바구니가 없으면 빈 배열을 반환합니다.',
+  })
   @ApiResponse({
     status: 200,
     description: '장바구니가 성공적으로 조회되었습니다.',
@@ -126,12 +132,15 @@ export class CartController {
     description: '인증이 필요합니다',
     schema: { example: SwaggerErrorExamples.Unauthorized },
   })
-  async updateCart(@CurrentUser('sub') userId: UserId['userId'], @Body() dto: UpdateCartDto) {
-    return this.cartService.updateCart(userId, dto);
+  async updateCartBySizes(@CurrentUser('sub') userId: string, @Body() dto: UpdateCartBySizesDto) {
+    return this.cartService.updateCartBySizes(userId, dto);
   }
 
   @Delete('/:cartItemId')
-  @ApiOperation({ summary: '장바구니 아이템 삭제(카트 아이템 ID)' })
+  @ApiOperation({
+    summary: '장바구니 아이템 삭제(카트 아이템 ID)',
+    description: '장바구니에서 특정 아이템을 삭제합니다.',
+  })
   @ApiParam({
     name: 'cartItemId',
     description: '삭제할 장바구니 아이템 ID',
@@ -167,7 +176,10 @@ export class CartController {
   }
 
   @Get('/:cartItemId')
-  @ApiOperation({ summary: '장바구니 아이템 상세 조회(카트 아이템 ID)' })
+  @ApiOperation({
+    summary: '장바구니 아이템 상세 조회(카트 아이템 ID)',
+    description: '장바구니에서 특정 아이템의 상세 정보를 조회합니다.',
+  })
   @ApiResponse({
     status: 200,
     description: '장바구니 아이템 상세 조회에 성공했습니다.',

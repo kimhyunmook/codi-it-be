@@ -7,6 +7,7 @@ import {
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { PrismaService } from 'src/common/prisma/prisma.service';
+import { ProductErrorMsg } from '../product/constants/message';
 
 @Injectable()
 export class ReviewService {
@@ -48,9 +49,9 @@ export class ReviewService {
           },
         },
       });
-      let reviewsRating = 0;
-      if (product && product.reviews.length !== 0)
-        reviewsRating = product.reviews.reduce((a, c) => a + c.rating, 0) / product.reviews.length;
+      if (!product) throw new NotFoundException(ProductErrorMsg.NotFound);
+      const reviewsRating =
+        product.reviews.reduce((a, c) => a + c.rating, 0) / product.reviews.length || 0;
 
       const [createdReview] = await this.prisma.$transaction([
         this.prisma.review.create({
@@ -91,6 +92,13 @@ export class ReviewService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          user: {
+            select: {
+              name: true, // 리뷰 작성자 이름
+            },
+          },
+        },
       }),
     ]);
 
@@ -142,9 +150,36 @@ export class ReviewService {
       throw new ForbiddenException('본인이 작성한 리뷰만 삭제할 수 있습니다.');
     }
 
-    return this.prisma.review.delete({
-      where: { id: reviewId },
+    const orderItem = await this.prisma.orderItem.findFirst({
+      where: {
+        productId: review.productId,
+        order: {
+          userId: review.userId,
+        },
+        isReviewed: true,
+      },
+      orderBy: {
+        order: { createdAt: 'desc' },
+      },
     });
+
+    console.log('Found orderItem:', orderItem);
+
+    if (!orderItem) {
+      console.log('orderItem not found or isReviewed is false');
+    }
+
+    return this.prisma.$transaction([
+      this.prisma.review.delete({ where: { id: reviewId } }),
+      ...(orderItem
+        ? [
+            this.prisma.orderItem.update({
+              where: { id: orderItem.id },
+              data: { isReviewed: false },
+            }),
+          ]
+        : []),
+    ]);
   }
 
   async getReviewDetail(reviewId: string) {
